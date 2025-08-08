@@ -11,8 +11,8 @@
 #define MIN(X, Y) (((X) < (Y)) ? (X) : (Y))
 
 // Define screen dimensions
-#define SCREEN_WIDTH    800
-#define SCREEN_HEIGHT   800
+#define SCREEN_WIDTH    600
+#define SCREEN_HEIGHT   600
 
 #define BOARD_WIDTH 100
 #define BOARD_HEIGHT 100
@@ -64,7 +64,7 @@ struct food {
     int x, y;
 } food;
 
-enum direction { UP, RIGHT, DOWN, LEFT };
+enum direction { UP, RIGHT, DOWN, LEFT, NONE };
 
 struct snake {
     struct body *head; 
@@ -168,7 +168,13 @@ void render() {
 
 struct coord { int x, y; };
 void step() {
-    struct coord direction_to_coords[] = { { 0, -1 }, { 1, 0 }, { 0, 1 }, { -1, 0 } };
+    struct coord direction_to_coords[] = { { 0, 1 }, { 1, 0 }, { 0, -1 }, { -1, 0 } };
+
+    if (next_direction != NONE)
+    {
+        snake.direction = next_direction;
+        next_direction = NONE;
+    }
 
     struct coord diff = direction_to_coords[snake.direction];
     
@@ -238,17 +244,39 @@ int main(int, char*[])
 
     init();
 
-    const float step_time = 1.0 / 2.0;
+    const float step_time = 1.0 / 8.0;
     float time_since_last_step = 0.0f;
     float previous_time = current_time();
 
     int running = 1;
     SDL_Event e;
 
-    while (running) {
-        while (SDL_PollEvent(&e)) {
-            if (e.type == SDL_QUIT) {
+    while (running)
+    {
+        while (SDL_PollEvent(&e))
+        {
+            if (e.type == SDL_QUIT)
+            {
                 running = 0;
+            }
+            else if (e.type == SDL_KEYDOWN)
+            {
+              if (e.key.keysym.sym == SDLK_UP)
+              {
+                next_direction = UP;
+              } else if (e.key.keysym.sym == SDLK_RIGHT)
+              {
+                next_direction = RIGHT;
+              } else if (e.key.keysym.sym == SDLK_DOWN)
+              {
+                next_direction = DOWN;
+              } else if (e.key.keysym.sym == SDLK_LEFT)
+              {
+                next_direction = LEFT;
+              }
+            }
+            else if (e.type == SDL_KEYUP)
+            {
             }
         }
         
