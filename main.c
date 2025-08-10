@@ -10,12 +10,14 @@
 #define MAX(X, Y) (((X) > (Y)) ? (X) : (Y))
 #define MIN(X, Y) (((X) < (Y)) ? (X) : (Y))
 
+#define TRUE_MOD(A, N) (((A % N) + N) % N)
+
 // Define screen dimensions
 #define SCREEN_WIDTH    600
 #define SCREEN_HEIGHT   600
 
-#define BOARD_WIDTH 100
-#define BOARD_HEIGHT 100
+#define BOARD_WIDTH 20
+#define BOARD_HEIGHT 20
 
 
 /**
@@ -23,7 +25,7 @@ HELPER FUNCTIONS
 **/
 
 // retorna tempo atual em segundos
-float current_time() {
+double current_time() {
     struct timespec time;
     clock_gettime(CLOCK_MONOTONIC, &time);
 
@@ -45,14 +47,16 @@ parede: 4, 18, 0
 const float block_width = 1.0 / BOARD_WIDTH;
 const float block_height = 1.0 / BOARD_HEIGHT;
 
+double step_time = 1.0 / 8.0;
+
 enum board_entry {
-    NOTHING,
+    AIR,
     WALL,
     FOOD,
     SNAKE
 };
 
-int board[BOARD_HEIGHT][BOARD_WIDTH];
+enum board_entry board[BOARD_WIDTH][BOARD_HEIGHT];
 
 struct body {
     int x, y;
@@ -64,7 +68,7 @@ struct food {
     int x, y;
 } food;
 
-enum direction { UP, RIGHT, DOWN, LEFT, NONE };
+enum direction { UP = 0, RIGHT, DOWN, LEFT, NONE };
 
 struct snake {
     struct body *head; 
@@ -82,9 +86,24 @@ struct body *alloc_body() {
     return body_arena + next_body++;
 }
 
+void put_food() {
+    do
+    {
+        food.x = rand() % BOARD_WIDTH;
+        food.y = rand() % BOARD_HEIGHT;
+    } while (board[food.x][food.y] != AIR);
+
+    board[food.x][food.y] = FOOD;
+}
+
 void init() {
-    // create head
+    memset(board, AIR, sizeof(board));
+
+    step_time = 1.0 / 8.0;
+
     snake.size = 2;
+
+    // create head
     snake.head = alloc_body();
     snake.head->x = BOARD_WIDTH / 2;
     snake.head->y = BOARD_HEIGHT / 2;
@@ -104,10 +123,95 @@ void init() {
     
     board[snake.head->x][snake.head->y] = SNAKE;
 
-    food.x = rand() % BOARD_WIDTH;
-    food.y = rand() % BOARD_HEIGHT;
+    put_food();
 }
 
+void grow_in_front(int front_x, int front_y) {
+    struct body *prev_head = snake.head, *new_head = alloc_body();
+
+    prev_head->previous = new_head;
+    new_head->next = prev_head;
+    new_head->previous = NULL;
+    new_head->x = front_x;
+    new_head->y = front_y;
+
+    snake.head = new_head;
+    snake.size++;
+
+    board[front_x][front_y] = SNAKE;
+
+
+    fprintf(stdout, "+1\n");
+}
+
+void die() {
+    fprintf(stdout, "= %d\n", snake.size - 2);
+
+    // reset arena
+    next_body = 0;
+
+    init();
+}
+
+struct coord { int x, y; };
+void step() {
+    struct coord direction_to_coords[] = { { 0, 1 }, { 1, 0 }, { 0, -1 }, { -1, 0 } };
+
+    // pressed in the opposite direction so do nothing
+    if (((next_direction + 2) & 3) == snake.direction)
+    {
+        next_direction = NONE;
+    }
+
+    if (next_direction != NONE)
+    {
+        snake.direction = next_direction;
+        next_direction = NONE;
+    }
+
+    struct coord diff = direction_to_coords[snake.direction];
+    
+    int next_x = TRUE_MOD((snake.head->x + diff.x), BOARD_WIDTH);
+    int next_y = TRUE_MOD((snake.head->y + diff.y), BOARD_HEIGHT);
+
+    if (board[next_x][next_y] == FOOD)
+    {
+        grow_in_front(next_x, next_y);
+        put_food();
+        step_time = MIN(0.2, step_time - 0.001);
+        return;
+    }
+
+    if (board[next_x][next_y] != AIR)
+    {
+        die();
+        return;
+    }
+    
+    board[snake.tail->x][snake.tail->y] = AIR;
+    board[next_x][next_y] = SNAKE;
+
+    if (snake.size == 1) {
+        snake.head->x = next_x;
+        snake.head->y = next_y;
+        snake.head->x = next_x;
+    } else {
+        struct body *new_head = snake.tail;
+        struct body *new_tail = snake.tail->previous;
+        
+        new_head->next = snake.head;
+        new_head->previous = NULL;
+        snake.head->previous = new_head;
+        snake.head = new_head;
+
+        if (new_tail)
+            new_tail->next = NULL;
+        snake.tail = new_tail;
+        
+        snake.head->x = next_x;
+        snake.head->y = next_y;
+    }
+}
 
 void render_snake() {
     struct body *current = snake.head;
@@ -117,7 +221,6 @@ void render_snake() {
 
         float x = block_width * current->x;
         float y = block_height * current->y;
-        fprintf(stderr, "rendering body x %g y %g width %g height %g\n", x, y, block_width, block_height);
 
         // render head
         glBegin(GL_QUADS); // Use GL_LINE_LOOP for just the outline
@@ -136,7 +239,6 @@ void render_food() {
 
     float x = block_width * food.x;
     float y = block_height * food.y;
-    fprintf(stderr, "rendering food at x %g y %g width %g height %g\n", x, y, block_width, block_height);
 
     // render head
     glBegin(GL_QUADS); // Use GL_LINE_LOOP for just the outline
@@ -151,7 +253,6 @@ void render_wall() {
 }
 
 void render() {
-    fprintf(stderr, "RENDER\n");
     glClearColor(53.0 / 255.0, 112.0 / 255.0, 37.0 / 255.0, 1.0);
     glClear(GL_COLOR_BUFFER_BIT);
 
@@ -165,42 +266,6 @@ void render() {
     render_food();
 }
 
-
-struct coord { int x, y; };
-void step() {
-    struct coord direction_to_coords[] = { { 0, 1 }, { 1, 0 }, { 0, -1 }, { -1, 0 } };
-
-    if (next_direction != NONE)
-    {
-        snake.direction = next_direction;
-        next_direction = NONE;
-    }
-
-    struct coord diff = direction_to_coords[snake.direction];
-    
-    int next_x = snake.head->x + diff.x;
-    int next_y = snake.head->y + diff.y;
-    
-    if (snake.size == 1) {
-        snake.head->x = next_x;
-        snake.head->y = next_y;
-    } else {
-        struct body *new_head = snake.tail;
-        struct body *new_tail = snake.tail->previous;
-        
-        new_head->next = snake.head;
-        new_head->previous = NULL;
-        snake.head->previous = new_head;
-        snake.head = new_head;
-
-        if (new_tail)
-            new_tail->next = NULL;
-        snake.tail = new_tail;
-        
-        snake.head->x = next_x;
-        snake.head->y = next_y;
-    }
-}
 
 int main(int, char*[])
 {
@@ -244,9 +309,8 @@ int main(int, char*[])
 
     init();
 
-    const float step_time = 1.0 / 8.0;
-    float time_since_last_step = 0.0f;
-    float previous_time = current_time();
+    double time_since_last_step = 0.0;
+    double previous_time = current_time();
 
     int running = 1;
     SDL_Event e;
@@ -261,16 +325,17 @@ int main(int, char*[])
             }
             else if (e.type == SDL_KEYDOWN)
             {
-              if (e.key.keysym.sym == SDLK_UP)
+                int key = e.key.keysym.sym;
+              if (key == SDLK_UP || key == 'w')
               {
                 next_direction = UP;
-              } else if (e.key.keysym.sym == SDLK_RIGHT)
+              } else if (key == SDLK_RIGHT || key == 'd')
               {
                 next_direction = RIGHT;
-              } else if (e.key.keysym.sym == SDLK_DOWN)
+              } else if (key ==  SDLK_DOWN || key == 's')
               {
                 next_direction = DOWN;
-              } else if (e.key.keysym.sym == SDLK_LEFT)
+              } else if (key == SDLK_LEFT || key == 'a')
               {
                 next_direction = LEFT;
               }
@@ -281,16 +346,15 @@ int main(int, char*[])
         }
         
         if (time_since_last_step > step_time) {
-            fprintf(stderr, "STEP\n");
             step();
-            time_since_last_step = 0.0f;
+            time_since_last_step = 0.0;
         }   
 
         render();
 
         SDL_GL_SwapWindow(window);
         
-        float time = current_time();
+        double time = current_time();
         time_since_last_step += time - previous_time;
         previous_time = time;
     }
